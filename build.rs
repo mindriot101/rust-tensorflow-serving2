@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use walkdir::WalkDir;
+// use walkdir::WalkDir;
 
 fn main() {
     // let protos: Vec<_> = WalkDir::new("protos")
@@ -15,9 +15,13 @@ fn main() {
     //         }
     //     })
     //     .collect();
-    let protos = vec![PathBuf::from(
-        "protos/tensorflow_serving/apis/classification.proto",
-    )];
+    let protos = &[
+        // "protos/tensorflow_serving/apis/classification.proto",
+        "protos/tensorflow_serving/apis/prediction_service.proto",
+    ]
+    .iter()
+    .map(PathBuf::from)
+    .collect::<Vec<_>>();
 
     match tonic_build::configure().compile(&protos, &[PathBuf::from("protos")]) {
         Ok(_) => {}

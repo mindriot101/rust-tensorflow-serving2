@@ -12,10 +12,12 @@ struct Opts {
     port: u16,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let opts = Opts::from_args();
 
-    let serving = TensorflowServing::new()
+    let mut serving = TensorflowServing::new()
+        .await
         .hostname(opts.hostname)
         .port(opts.port)
         .build()
@@ -26,10 +28,9 @@ fn main() {
     let mut data_binding = HashMap::new();
     data_binding.insert("foobar", data);
 
-    /*
     let result = serving
         .classify("resnet", data_binding)
+        .await
         .expect("error classifying");
     println!("{:#?}", result);
-    */
 }
