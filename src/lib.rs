@@ -1,11 +1,45 @@
 extern crate prost_types;
 
+use image::{DynamicImage, GenericImageView};
 use std::collections::HashMap;
 use std::error::Error;
 use std::iter::FromIterator;
+use std::path::{Path, PathBuf};
 
 /// Our custom result type
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+/// Trait representing either an image or some image data
+///
+pub trait Image {
+    /// Extract an image from the enclosed object
+    ///
+    fn to_image(&self) -> Result<DynamicImage>;
+}
+
+impl Image for dyn AsRef<Path> {
+    fn to_image(&self) -> Result<DynamicImage> {
+        image::open(self).map_err(From::from)
+    }
+}
+
+impl Image for DynamicImage {
+    fn to_image(&self) -> Result<DynamicImage> {
+        Ok(self.clone())
+    }
+}
+
+impl Image for PathBuf {
+    fn to_image(&self) -> Result<DynamicImage> {
+        image::open(self).map_err(From::from)
+    }
+}
+
+impl Image for &str {
+    fn to_image(&self) -> Result<DynamicImage> {
+        image::open(self).map_err(From::from)
+    }
+}
 
 pub(crate) mod tensorflow {
     tonic::include_proto!("tensorflow");
@@ -16,10 +50,11 @@ pub(crate) mod tensorflow {
 
 use tensorflow::tensorflow_serving::{
     client::PredictionServiceClient, input, model_spec::VersionChoice, ClassificationRequest,
-    ClassificationResult, ExampleList, Input, ModelSpec,
+    ClassificationResult, ExampleList, Input, ModelSpec, PredictRequest, PredictResponse,
 };
 use tensorflow::{
-    feature, feature::Kind, BytesList, Example, Feature, Features, FloatList, Int64List,
+    feature, feature::Kind, tensor_shape_proto, BytesList, DataType, Example, Feature, Features,
+    FloatList, Int64List, TensorProto, TensorShapeProto,
 };
 
 /// Builder pattern used to build the client.
@@ -82,35 +117,16 @@ impl TensorflowServingBuilder {
             .unwrap_or_else(|| "serving_default".to_string());
 
         let hostname = self.hostname.take().unwrap();
-        let client = PredictionServiceClient::connect(format!("http://{}:{}", hostname, self.port.unwrap()))?;
+        let client = PredictionServiceClient::connect(format!(
+            "http://{}:{}",
+            hostname,
+            self.port.unwrap()
+        ))?;
 
         Ok(TensorflowServing {
             client,
             signature_name,
         })
-
-
-        // TODO: this many threads?
-        // let env = Arc::new(Environment::new(8));
-        // let prediction_channel = ChannelBuilder::new(env.clone()).connect(&format!(
-        //     "{}:{}",
-        //     hostname,
-        //     self.port.unwrap()
-        // ));
-        // let prediction_client = PredictionServiceClient::new(prediction_channel);
-
-        // let model_management_channel = ChannelBuilder::new(env.clone()).connect(&format!(
-        //     "{}:{}",
-        //     hostname,
-        //     self.port.unwrap()
-        // ));
-        // let model_management_client = ModelServiceClient::new(model_management_channel);
-
-        // Ok(TensorflowServing {
-        //     prediction_client,
-        //     model_management_client,
-        //     signature_name: signature_name,
-        // })
     }
 }
 
@@ -119,10 +135,6 @@ impl TensorflowServingBuilder {
 /// Used to talk to a Tensorflow Serving server.
 ///
 pub struct TensorflowServing {
-    /*
-    prediction_client: PredictionServiceClient,
-    model_management_client: ModelServiceClient,
-    */
     client: PredictionServiceClient<tonic::transport::Channel>,
     signature_name: String,
 }
@@ -164,6 +176,72 @@ impl TensorflowServing {
         */
     }
 
+    /// Run a prediction for a supplied image
+    ///
+    /// Supply something that implements `Into<Image>` i.e. either a path to an image file, or
+    /// an already open `image::DynamicImage`, and a [`ModelDescription`][model-description],
+    /// to get a prediction from the server.
+    ///
+    /// The `preprocessing_fn` parameter allows customisation of the pixel values.
+    ///
+    /// [model-description]: struct.ModelDescription.html
+    pub async fn predict_with_preprocessing<I, F, S, M>(
+        &mut self,
+        img: I,
+        model_description: S,
+        preprocessing_fn: M,
+    ) -> Result<PredictionResult>
+    where
+        I: Image,
+        F: Into<String>,
+        S: Into<ModelDescription<F>>,
+        M: Fn(f32) -> f32,
+    {
+        // Load data
+        let img = img.to_image()?;
+
+        let (width, height) = img.dimensions();
+        let dims: Vec<_> = [1, width as i64, height as i64, 3]
+            .iter()
+            .map(|d| tensor_shape_proto::Dim {
+                size: *d,
+                name: "".to_string(),
+            })
+            .collect();
+
+        let pixels: Vec<_> = img
+            .raw_pixels()
+            .iter()
+            .map(|p| *p as f32)
+            .map(preprocessing_fn)
+            .collect();
+
+        let tensor_shape = TensorShapeProto {
+            dim: dims.into(),
+            ..Default::default()
+        };
+
+        let tensor = TensorProto {
+            dtype: 1,
+            tensor_shape: Some(tensor_shape).into(),
+            float_val: pixels,
+            ..Default::default()
+        };
+
+        let mut inputs = HashMap::new();
+        inputs.insert("input".into(), tensor);
+
+        let request = PredictRequest {
+            model_spec: Some(self.build_model_spec(model_description)).into(),
+            inputs,
+            ..Default::default()
+        };
+
+        let resp = self.client.predict(tonic::Request::new(request)).await?;
+        unimplemented!("{:#?}", resp);
+        // PredictionResult::from_raw(resp)
+    }
+
     /*
     /// Run a regression job
     pub fn regress<S, T, F, V>(
@@ -185,72 +263,6 @@ impl TensorflowServing {
 
         let resp = self.prediction_client.regress(&req)?;
         Ok(resp.result.unwrap())
-    }
-
-    /// Run a prediction for a supplied image
-    ///
-    /// Supply something that implements `Into<Image>` i.e. either a path to an image file, or
-    /// an already open `image::DynamicImage`, and a [`ModelDescription`][model-description],
-    /// to get a prediction from the server.
-    ///
-    /// The `preprocessing_fn` parameter allows customisation of the pixel values.
-    ///
-    /// [model-description]: struct.ModelDescription.html
-    pub fn predict_with_preprocessing<I, F, S, M>(
-        &self,
-        img: I,
-        model_description: S,
-        preprocessing_fn: M,
-    ) -> Result<PredictionResult>
-    where
-        I: Image,
-        F: Into<String>,
-        S: Into<ModelDescription<F>>,
-        M: Fn(f32) -> f32,
-    {
-        // Load data
-        let img = img.to_image()?;
-
-        let (width, height) = img.dimensions();
-        let dims: Vec<_> = [1, width as i64, height as i64, 3]
-            .iter()
-            .map(|d| {
-                let mut dim = TensorShapeProto_Dim::new();
-                dim.set_size(*d);
-                dim
-            })
-            .collect();
-
-        let pixels: Vec<_> = img
-            .raw_pixels()
-            .iter()
-            .map(|p| *p as f32)
-            .map(preprocessing_fn)
-            .collect();
-
-        let tensor_shape = TensorShapeProto {
-            dim: dims.into(),
-            ..Default::default()
-        };
-
-        let tensor = TensorProto {
-            dtype: DataType::DT_FLOAT,
-            tensor_shape: Some(tensor_shape).into(),
-            float_val: pixels,
-            ..Default::default()
-        };
-
-        let mut inputs = HashMap::new();
-        inputs.insert("input".into(), tensor);
-
-        let request = PredictRequest {
-            model_spec: Some(self.build_model_spec(model_description)).into(),
-            inputs,
-            ..Default::default()
-        };
-
-        let resp = self.prediction_client.predict(&request)?;
-        PredictionResult::from_raw(resp)
     }
 
     /// Run a prediction (see [predict-with-preprocessing](struct.TensorflowServing.html#method.predict_with_preprocessing))
@@ -404,6 +416,59 @@ impl TensorflowServing {
     }
 }
 
+/// Result of prediction
+#[derive(Debug)]
+pub struct PredictionResult {
+    /// Probability vector one per class
+    ///
+    pub probabilities: Vec<f32>,
+
+    /// Index into the probability vector of the most likely class
+    ///
+    pub max_idx: i64,
+}
+
+impl PredictionResult {
+    // fn from_raw(response: PredictResponse) -> Result<Self> {
+    //     let outputs = response.get_outputs();
+    //     let probs = outputs.get("probabilities").ok_or_else(|| {
+    //         Err(format!("probabilities not available from the server response").into())
+    //     })?;
+
+    //     // Read the classes information
+    //     let classes = outputs
+    //         .get("classes")
+    //         .ok_or_else(|| Err(format!("classes not available from the server response").into()))?;
+
+    //     if classes.dtype != DataType::DtInt64 {
+    //         return Err(format!(
+    //             "classes has unexpected data type, should be i64, got {:?}",
+    //             classes.dtype
+    //         )
+    //         .into());
+    //     }
+
+    //     let classes_shape = classes.get_tensor_shape();
+    //     let dims = classes_shape.get_dim();
+
+    //     if dims.len() != 1 {
+    //         return Err(format!("number of classes unexpected").into());
+    //     }
+
+    //     let dim = &dims[0];
+    //     let n = dim.size;
+    //     if n != 1 {
+    //         return Err(format!("number of classes unexpected").into());
+    //     }
+
+    //     let max_idx = classes.get_int64_val()[0];
+
+    //     Ok(PredictionResult {
+    //         probabilities: probs.float_val.clone(),
+    //         max_idx,
+    //     })
+    // }
+}
 /// Description of a model
 ///
 /// This struct is used to specify a model, and optionally a version of a model. It
