@@ -21,7 +21,9 @@ struct Opts {
 async fn main() {
     let opts = Opts::from_args();
 
+    println!("Opening image");
     let img = image::open(opts.image).expect("reading image");
+    println!("Image open");
 
     let mut serving = TensorflowServing::new()
         .await
@@ -30,14 +32,17 @@ async fn main() {
         .build()
         .unwrap();
 
+    println!("Tensorflow serving client created");
+
     let model_definition = tensorflow_serving::ModelDescription {
         name: opts.model,
         version: opts.model_version,
     };
 
+    println!("Sending request");
     let result = serving
         .predict_with_preprocessing(img, model_definition, |value| value / 255.)
         .await
         .expect("error predicting");
-    println!("{:#?}", result);
+    println!("Got result: {:#?}", result);
 }

@@ -53,7 +53,7 @@ use tensorflow::tensorflow_serving::{
     ClassificationResult, ExampleList, Input, ModelSpec, PredictRequest, PredictResponse,
 };
 use tensorflow::{
-    feature, feature::Kind, tensor_shape_proto, BytesList, DataType, Example, Feature, Features,
+    feature, feature::Kind, tensor_shape_proto, BytesList, Example, Feature, Features,
     FloatList, Int64List, TensorProto, TensorShapeProto,
 };
 
@@ -190,7 +190,7 @@ impl TensorflowServing {
         img: I,
         model_description: S,
         preprocessing_fn: M,
-    ) -> Result<PredictionResult>
+    ) -> Result<PredictResponse>
     where
         I: Image,
         F: Into<String>,
@@ -237,9 +237,18 @@ impl TensorflowServing {
             ..Default::default()
         };
 
-        let resp = self.client.predict(tonic::Request::new(request)).await?;
-        unimplemented!("{:#?}", resp);
-        // PredictionResult::from_raw(resp)
+        let resp: tonic::Response<PredictResponse> = self.client.predict(tonic::Request::new(request)).await?;
+        Ok(resp.into_inner())
+    }
+
+    /// Run a prediction (see [predict-with-preprocessing](struct.TensorflowServing.html#method.predict_with_preprocessing))
+    pub async fn predict<I, F, S>(&mut self, img: I, model_description: S) -> Result<PredictResponse>
+    where
+        I: Image,
+        F: Into<String>,
+        S: Into<ModelDescription<F>>,
+    {
+        self.predict_with_preprocessing(img, model_description, |p| p).await
     }
 
     /*
@@ -265,15 +274,6 @@ impl TensorflowServing {
         Ok(resp.result.unwrap())
     }
 
-    /// Run a prediction (see [predict-with-preprocessing](struct.TensorflowServing.html#method.predict_with_preprocessing))
-    pub fn predict<I, F, S>(&self, img: I, model_description: S) -> Result<PredictionResult>
-    where
-        I: Image,
-        F: Into<String>,
-        S: Into<ModelDescription<F>>,
-    {
-        self.predict_with_preprocessing(img, model_description, |p| p)
-    }
 
     /// Perform multi-inference
     pub fn multi_inference<S, V>(
@@ -416,59 +416,6 @@ impl TensorflowServing {
     }
 }
 
-/// Result of prediction
-#[derive(Debug)]
-pub struct PredictionResult {
-    /// Probability vector one per class
-    ///
-    pub probabilities: Vec<f32>,
-
-    /// Index into the probability vector of the most likely class
-    ///
-    pub max_idx: i64,
-}
-
-impl PredictionResult {
-    // fn from_raw(response: PredictResponse) -> Result<Self> {
-    //     let outputs = response.get_outputs();
-    //     let probs = outputs.get("probabilities").ok_or_else(|| {
-    //         Err(format!("probabilities not available from the server response").into())
-    //     })?;
-
-    //     // Read the classes information
-    //     let classes = outputs
-    //         .get("classes")
-    //         .ok_or_else(|| Err(format!("classes not available from the server response").into()))?;
-
-    //     if classes.dtype != DataType::DtInt64 {
-    //         return Err(format!(
-    //             "classes has unexpected data type, should be i64, got {:?}",
-    //             classes.dtype
-    //         )
-    //         .into());
-    //     }
-
-    //     let classes_shape = classes.get_tensor_shape();
-    //     let dims = classes_shape.get_dim();
-
-    //     if dims.len() != 1 {
-    //         return Err(format!("number of classes unexpected").into());
-    //     }
-
-    //     let dim = &dims[0];
-    //     let n = dim.size;
-    //     if n != 1 {
-    //         return Err(format!("number of classes unexpected").into());
-    //     }
-
-    //     let max_idx = classes.get_int64_val()[0];
-
-    //     Ok(PredictionResult {
-    //         probabilities: probs.float_val.clone(),
-    //         max_idx,
-    //     })
-    // }
-}
 /// Description of a model
 ///
 /// This struct is used to specify a model, and optionally a version of a model. It
