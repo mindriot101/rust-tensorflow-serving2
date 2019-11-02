@@ -1,3 +1,4 @@
+#![allow(clippy::large_enum_variant)]
 extern crate prost_types;
 
 use image::{DynamicImage, GenericImageView};
@@ -103,12 +104,12 @@ impl TensorflowServingBuilder {
     /// Build a `TensorflowServing` client.
     ///
     pub fn build(&mut self) -> Result<TensorflowServing> {
-        if let None = self.hostname {
-            return Err(format!("hostname not provided").into());
+        if self.hostname.is_none() {
+            return Err("hostname not provided".into());
         }
 
-        if let None = self.port {
-            return Err(format!("port not provided").into());
+        if self.port.is_none() {
+            return Err("port not provided".into());
         }
 
         let signature_name = self
@@ -142,7 +143,8 @@ pub struct TensorflowServing {
 impl TensorflowServing {
     /// Construct a new `TensorflowServing` builder struct.
     ///
-    pub async fn new() -> TensorflowServingBuilder {
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new() -> TensorflowServingBuilder {
         TensorflowServingBuilder::default()
     }
 
@@ -160,9 +162,8 @@ impl TensorflowServing {
         V: Into<Payload>,
     {
         let req = ClassificationRequest {
-            model_spec: Some(self.build_model_spec(model_name)).into(),
-            input: Some(self.build_input(payload_map)).into(),
-            ..Default::default()
+            model_spec: Some(self.build_model_spec(model_name)),
+            input: Some(self.build_input(payload_map)),
         };
 
         let request = tonic::Request::new(req);
@@ -217,13 +218,13 @@ impl TensorflowServing {
             .collect();
 
         let tensor_shape = TensorShapeProto {
-            dim: dims.into(),
+            dim: dims,
             ..Default::default()
         };
 
         let tensor = TensorProto {
             dtype: 1,
-            tensor_shape: Some(tensor_shape).into(),
+            tensor_shape: Some(tensor_shape),
             float_val: pixels,
             ..Default::default()
         };
@@ -232,7 +233,7 @@ impl TensorflowServing {
         inputs.insert("input".into(), tensor);
 
         let request = PredictRequest {
-            model_spec: Some(self.build_model_spec(model_description)).into(),
+            model_spec: Some(self.build_model_spec(model_description)),
             inputs,
             ..Default::default()
         };
@@ -379,21 +380,16 @@ impl TensorflowServing {
 
         // Build Vec<Example>
         let example = Example {
-            features: Some(ft).into(),
-            ..Default::default()
+            features: Some(ft),
         };
         // Build ExampleList
         let example_list = ExampleList {
-            examples: vec![example].into(),
-            ..Default::default()
+            examples: vec![example],
         };
         // Build Input
-        let input = Input {
-            kind: Some(input::Kind::ExampleList(example_list)).into(),
-            ..Default::default()
-        };
-
-        input
+        Input {
+            kind: Some(input::Kind::ExampleList(example_list)),
+        }
     }
 
     fn build_model_spec<S, T>(&self, model_description: S) -> ModelSpec
@@ -405,13 +401,12 @@ impl TensorflowServing {
 
         let version = desc
             .version
-            .map(|version_id| VersionChoice::Version(version_id));
+            .map(VersionChoice::Version);
 
         ModelSpec {
             name: desc.name.into(),
             version_choice: version,
             signature_name: self.signature_name.clone(),
-            ..Default::default()
         }
     }
 }
@@ -485,24 +480,21 @@ impl From<Payload> for Feature {
         let data_list = match c {
             Payload::Bytes(v) => {
                 let data_list = BytesList {
-                    value: v.into(),
-                    ..Default::default()
+                    value: v,
                 };
 
                 Kind::BytesList(data_list)
             }
             Payload::Ints(v) => {
                 let data_list = Int64List {
-                    value: v.into(),
-                    ..Default::default()
+                    value: v,
                 };
 
                 Kind::Int64List(data_list)
             }
             Payload::Floats(v) => {
                 let data_list = FloatList {
-                    value: v.into(),
-                    ..Default::default()
+                    value: v,
                 };
 
                 Kind::FloatList(data_list)
@@ -511,7 +503,6 @@ impl From<Payload> for Feature {
 
         Feature {
             kind: Some(data_list),
-            ..Default::default()
         }
     }
 }
@@ -546,7 +537,6 @@ where
         });
         Features {
             feature: HashMap::from_iter(i),
-            ..Default::default()
         }
     }
 }
