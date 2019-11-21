@@ -25,7 +25,6 @@ async fn main() {
     println!("Image open");
 
     let mut serving = TensorflowServing::new()
-        .await
         .hostname(opts.hostname)
         .port(opts.port)
         .build()
