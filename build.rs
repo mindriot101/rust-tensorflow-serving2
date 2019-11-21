@@ -6,10 +6,7 @@ fn main() {
         .map(PathBuf::from)
         .collect::<Vec<_>>();
 
-    match tonic_build::configure().compile(&protos, &[PathBuf::from("protos")]) {
-        Ok(_) => {}
-        Err(e) => {
-            panic!("{}", e);
-        }
-    }
+    tonic_build::configure()
+        .compile(&protos, &[PathBuf::from("protos")])
+        .unwrap()
 }
