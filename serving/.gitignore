@@ -1,0 +1,4 @@
+models
+resnet_v2_fp32_savedmodel_NHWC
+resnet_v2_fp32_savedmodel_NHWC.tar.gz
+*.jpg
