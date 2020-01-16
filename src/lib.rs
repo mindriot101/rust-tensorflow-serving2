@@ -180,8 +180,7 @@ impl TensorflowServing {
             input: Some(self.build_input(payload_map)),
         };
 
-        let request = tonic::Request::new(req);
-        let resp = self.prediction_client.classify(request).await?;
+        let resp = self.prediction_client.classify(req).await?;
         unimplemented!("{:#?}", resp)
 
         /*
@@ -252,7 +251,10 @@ impl TensorflowServing {
             ..Default::default()
         };
 
-        let resp: tonic::Response<PredictResponse> = self.prediction_client.predict(tonic::Request::new(request)).await?;
+        let resp: tonic::Response<PredictResponse> = self
+            .prediction_client
+            .predict(request)
+            .await?;
         Ok(resp.into_inner())
     }
 
@@ -273,7 +275,10 @@ impl TensorflowServing {
         let request = GetModelStatusRequest {
             model_spec: Some(self.build_model_spec(model_name.as_ref())),
         };
-        let resp: tonic::Response<GetModelStatusResponse> = self.model_client.get_model_status(tonic::Request::new(request)).await?;
+        let resp: tonic::Response<GetModelStatusResponse> = self
+            .model_client
+            .get_model_status(request)
+            .await?;
         Ok(resp.into_inner())
     }
 
