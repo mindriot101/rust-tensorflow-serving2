@@ -28,6 +28,7 @@ async fn main() {
         .hostname(opts.hostname)
         .port(opts.port)
         .build()
+        .await
         .unwrap();
 
     println!("Tensorflow serving client created");

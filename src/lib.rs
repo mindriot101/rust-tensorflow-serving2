@@ -50,7 +50,7 @@ pub(crate) mod tensorflow {
 }
 
 use tensorflow::tensorflow_serving::{
-    client::PredictionServiceClient, input, model_spec::VersionChoice, ClassificationRequest,
+    prediction_service_client::PredictionServiceClient, input, model_spec::VersionChoice, ClassificationRequest,
     ClassificationResult, ExampleList, Input, ModelSpec, PredictRequest, PredictResponse,
 };
 use tensorflow::{
@@ -103,7 +103,7 @@ impl TensorflowServingBuilder {
 
     /// Build a `TensorflowServing` client.
     ///
-    pub fn build(&mut self) -> Result<TensorflowServing> {
+    pub async fn build(&mut self) -> Result<TensorflowServing> {
         if self.hostname.is_none() {
             return Err("hostname not provided".into());
         }
@@ -122,7 +122,7 @@ impl TensorflowServingBuilder {
             "http://{}:{}",
             hostname,
             self.port.unwrap()
-        ))?;
+        )).await?;
 
         Ok(TensorflowServing {
             client,

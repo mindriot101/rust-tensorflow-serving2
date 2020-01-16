@@ -7,18 +7,18 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tonic = "0.1.0-alpha.3"
+tonic = { version = "0.1.0", features = ["prost"] }
 bytes = "0.4.12"
-prost = "0.5.0"
-prost-derive = "0.5.0"
+prost = "0.6.0"
+prost-derive = "0.6.0"
 failure = "0.1.5"
-prost-types = "0.5.0"
+prost-types = "0.6.0"
 image = "0.22.3"
 
 [build-dependencies]
-tonic-build = "0.1.0-alpha.3"
+tonic-build = "0.1.0"
 walkdir = "2.2.9"
 
 [dev-dependencies]
 structopt = "0.3.3"
-tokio = "0.2.0-alpha.6"
+tokio = { version = "0.2", features = ["full"] }
