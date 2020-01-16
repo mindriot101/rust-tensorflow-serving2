@@ -1,5 +1,6 @@
 ## Features
 
+Async version of my [other package](https://gitlab.com/srwalker101/rust-tensorflow-serving)
 
 ### Model introspection
 
