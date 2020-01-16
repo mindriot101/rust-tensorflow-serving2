@@ -3,8 +3,8 @@
 
 ### Model introspection
 
-* [ ] Get model status
-* [ ] Handle reload config request
+* [x] Get model status
+* [x] Handle reload config request
 
 ### Prediction
 
@@ -12,4 +12,4 @@
 * [ ] Regress
 * [x] Predict
 * [ ] MultiInference
-* [ ] GetModelMetadata
+* [x] GetModelMetadata
