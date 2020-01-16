@@ -1,12 +1,10 @@
-use std::path::PathBuf;
-
 fn main() {
-    let protos = &["protos/tensorflow_serving/apis/prediction_service.proto"]
-        .iter()
-        .map(PathBuf::from)
-        .collect::<Vec<_>>();
-
+    let protos = &[
+        "protos/tensorflow_serving/apis/prediction_service.proto",
+        "protos/tensorflow_serving/apis/model_service.proto",
+        "protos/tensorflow/core/lib/core/error_codes.proto",
+    ];
     tonic_build::configure()
-        .compile(&protos, &[PathBuf::from("protos")])
+        .compile(protos, &["protos"])
         .unwrap()
 }

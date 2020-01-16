@@ -44,14 +44,20 @@ impl Image for &str {
 
 pub(crate) mod tensorflow {
     tonic::include_proto!("tensorflow");
+    pub(crate) mod error {
+        tonic::include_proto!("tensorflow.error");
+    }
+
     pub(crate) mod tensorflow_serving {
         tonic::include_proto!("tensorflow.serving");
     }
 }
 
 use tensorflow::tensorflow_serving::{
-    prediction_service_client::PredictionServiceClient, input, model_spec::VersionChoice, ClassificationRequest,
+    prediction_service_client::PredictionServiceClient, model_service_client::ModelServiceClient,
+    input, model_spec::VersionChoice, ClassificationRequest,
     ClassificationResult, ExampleList, Input, ModelSpec, PredictRequest, PredictResponse,
+    GetModelStatusResponse, GetModelStatusRequest,
 };
 use tensorflow::{
     feature, feature::Kind, tensor_shape_proto, BytesList, Example, Feature, Features,
@@ -118,14 +124,21 @@ impl TensorflowServingBuilder {
             .unwrap_or_else(|| "serving_default".to_string());
 
         let hostname = self.hostname.take().unwrap();
-        let client = PredictionServiceClient::connect(format!(
+        let prediction_client = PredictionServiceClient::connect(format!(
             "http://{}:{}",
             hostname,
             self.port.unwrap()
         )).await?;
 
+        let model_client = ModelServiceClient::connect(format!(
+                "http://{}:{}",
+                hostname,
+                self.port.unwrap()
+        )).await?;
+
         Ok(TensorflowServing {
-            client,
+            prediction_client,
+            model_client,
             signature_name,
         })
     }
@@ -136,7 +149,8 @@ impl TensorflowServingBuilder {
 /// Used to talk to a Tensorflow Serving server.
 ///
 pub struct TensorflowServing {
-    client: PredictionServiceClient<tonic::transport::Channel>,
+    prediction_client: PredictionServiceClient<tonic::transport::Channel>,
+    model_client: ModelServiceClient<tonic::transport::Channel>,
     signature_name: String,
 }
 
@@ -167,7 +181,7 @@ impl TensorflowServing {
         };
 
         let request = tonic::Request::new(req);
-        let resp = self.client.classify(request).await?;
+        let resp = self.prediction_client.classify(request).await?;
         unimplemented!("{:#?}", resp)
 
         /*
@@ -238,7 +252,7 @@ impl TensorflowServing {
             ..Default::default()
         };
 
-        let resp: tonic::Response<PredictResponse> = self.client.predict(tonic::Request::new(request)).await?;
+        let resp: tonic::Response<PredictResponse> = self.prediction_client.predict(tonic::Request::new(request)).await?;
         Ok(resp.into_inner())
     }
 
@@ -250,6 +264,17 @@ impl TensorflowServing {
         S: Into<ModelDescription<F>>,
     {
         self.predict_with_preprocessing(img, model_description, |p| p).await
+    }
+
+    /// Fetch model status
+    ///
+    /// Query the Tensorflow serving API to get the model status
+    pub async fn model_status<S: AsRef<str>>(&mut self, model_name: S) -> Result<GetModelStatusResponse> {
+        let request = GetModelStatusRequest {
+            model_spec: Some(self.build_model_spec(model_name.as_ref())),
+        };
+        let resp: tonic::Response<GetModelStatusResponse> = self.model_client.get_model_status(tonic::Request::new(request)).await?;
+        Ok(resp.into_inner())
     }
 
     /*
