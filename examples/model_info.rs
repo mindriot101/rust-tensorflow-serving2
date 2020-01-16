@@ -39,18 +39,21 @@ async fn main() {
         .expect("fetching model metadata");
     println!("Got result: {:#?}", metadata);
 
-    // Build up a model config
-    let config = vec![ModelConfig {
-        base_path: "/".to_string(),
-        logging_config: None,
-        model_platform: "tensorflow".to_string(),
-        name: opts.model.clone(),
-        model_type: 0,
-        model_version_policy: None,
-        version_labels: HashMap::new(),
-    }];
+    // XXX after reloading the config, the model will be reloaded and for some reason become not
+    // available afterwards. We therefore don't run this as part of the example.
 
-    println!("Reloading model");
-    let response = serving.reload(config).await.expect("reloading model");
-    println!("Got result: {:#?}", response);
+    // Build up a model config
+    // let config = vec![ModelConfig {
+    //     base_path: "/".to_string(),
+    //     logging_config: None,
+    //     model_platform: "tensorflow".to_string(),
+    //     name: opts.model.clone(),
+    //     model_type: 0,
+    //     model_version_policy: None,
+    //     version_labels: HashMap::new(),
+    // }];
+
+    // println!("Reloading model");
+    // let response = serving.reload(config).await.expect("reloading model");
+    // println!("Got result: {:#?}", response);
 }

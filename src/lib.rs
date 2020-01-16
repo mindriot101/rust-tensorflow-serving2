@@ -145,6 +145,16 @@ impl TensorflowServingBuilder {
     }
 }
 
+impl Clone for TensorflowServing {
+    fn clone(&self) -> Self {
+        Self {
+            prediction_client: self.prediction_client.clone(),
+            model_client: self.model_client.clone(),
+            signature_name: self.signature_name.clone(),
+        }
+    }
+}
+
 /// Tensorflow Serving client
 ///
 /// Used to talk to a Tensorflow Serving server.
