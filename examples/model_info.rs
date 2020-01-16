@@ -1,6 +1,5 @@
-use std::collections::HashMap;
 use structopt::StructOpt;
-use tensorflow_serving::{ModelConfig, TensorflowServing};
+use tensorflow_serving::TensorflowServing;
 
 #[derive(StructOpt, Debug)]
 struct Opts {
