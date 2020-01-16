@@ -54,15 +54,20 @@ pub(crate) mod tensorflow {
 }
 
 use tensorflow::tensorflow_serving::{
-    prediction_service_client::PredictionServiceClient, model_service_client::ModelServiceClient,
-    input, model_spec::VersionChoice, ClassificationRequest,
-    ClassificationResult, ExampleList, Input, ModelSpec, PredictRequest, PredictResponse,
-    GetModelStatusResponse, GetModelStatusRequest,
+    input, model_server_config, model_service_client::ModelServiceClient,
+    model_spec::VersionChoice, prediction_service_client::PredictionServiceClient,
+    ClassificationRequest, ClassificationResult, ExampleList, GetModelMetadataRequest,
+    GetModelMetadataResponse, GetModelStatusRequest, GetModelStatusResponse, Input,
+    ModelConfigList, ModelServerConfig, ModelSpec, PredictRequest, PredictResponse,
+    ReloadConfigRequest, ReloadConfigResponse,
 };
 use tensorflow::{
-    feature, feature::Kind, tensor_shape_proto, BytesList, Example, Feature, Features,
-    FloatList, Int64List, TensorProto, TensorShapeProto,
+    feature, feature::Kind, tensor_shape_proto, BytesList, Example, Feature, Features, FloatList,
+    Int64List, TensorProto, TensorShapeProto,
 };
+
+// Re-exports
+pub use tensorflow::tensorflow_serving::ModelConfig;
 
 /// Builder pattern used to build the client.
 ///
@@ -124,17 +129,13 @@ impl TensorflowServingBuilder {
             .unwrap_or_else(|| "serving_default".to_string());
 
         let hostname = self.hostname.take().unwrap();
-        let prediction_client = PredictionServiceClient::connect(format!(
-            "http://{}:{}",
-            hostname,
-            self.port.unwrap()
-        )).await?;
+        let prediction_client =
+            PredictionServiceClient::connect(format!("http://{}:{}", hostname, self.port.unwrap()))
+                .await?;
 
-        let model_client = ModelServiceClient::connect(format!(
-                "http://{}:{}",
-                hostname,
-                self.port.unwrap()
-        )).await?;
+        let model_client =
+            ModelServiceClient::connect(format!("http://{}:{}", hostname, self.port.unwrap()))
+                .await?;
 
         Ok(TensorflowServing {
             prediction_client,
@@ -251,33 +252,73 @@ impl TensorflowServing {
             ..Default::default()
         };
 
-        let resp: tonic::Response<PredictResponse> = self
-            .prediction_client
-            .predict(request)
-            .await?;
+        let resp = self.prediction_client.predict(request).await?;
         Ok(resp.into_inner())
     }
 
     /// Run a prediction (see [predict-with-preprocessing](struct.TensorflowServing.html#method.predict_with_preprocessing))
-    pub async fn predict<I, F, S>(&mut self, img: I, model_description: S) -> Result<PredictResponse>
+    pub async fn predict<I, F, S>(
+        &mut self,
+        img: I,
+        model_description: S,
+    ) -> Result<PredictResponse>
     where
         I: Image,
-        F: Into<String>,
         S: Into<ModelDescription<F>>,
+        F: Into<String>,
     {
-        self.predict_with_preprocessing(img, model_description, |p| p).await
+        self.predict_with_preprocessing(img, model_description, |p| p)
+            .await
     }
 
     /// Fetch model status
     ///
     /// Query the Tensorflow serving API to get the model status
-    pub async fn model_status<S: AsRef<str>>(&mut self, model_name: S) -> Result<GetModelStatusResponse> {
+    pub async fn model_status<S, T>(&mut self, model_name: S) -> Result<GetModelStatusResponse>
+    where
+        S: Into<ModelDescription<T>>,
+        T: Into<String>,
+    {
         let request = GetModelStatusRequest {
-            model_spec: Some(self.build_model_spec(model_name.as_ref())),
+            model_spec: Some(self.build_model_spec(model_name)),
         };
-        let resp: tonic::Response<GetModelStatusResponse> = self
+        let resp = self.model_client.get_model_status(request).await?;
+        Ok(resp.into_inner())
+    }
+
+    /// Fetch model metadata
+    pub async fn model_metadata<S, T>(&mut self, model_name: S) -> Result<GetModelMetadataResponse>
+    where
+        S: Into<ModelDescription<T>>,
+        T: Into<String>,
+    {
+        let request = GetModelMetadataRequest {
+            model_spec: Some(self.build_model_spec(model_name)),
+            metadata_field: vec!["signature_def".to_string()],
+        };
+
+        let resp = self.prediction_client.get_model_metadata(request).await?;
+        Ok(resp.into_inner())
+    }
+
+    /// Reload model config
+    pub async fn reload<C>(&mut self, model_config: C) -> Result<ReloadConfigResponse>
+    where
+        C: Into<Vec<ModelConfig>>,
+    {
+        let config = model_server_config::Config::ModelConfigList(ModelConfigList {
+            config: model_config.into(),
+        });
+
+        let request = ReloadConfigRequest {
+            config: Some(ModelServerConfig {
+                config: Some(config),
+            }),
+        };
+
+        let resp = self
             .model_client
-            .get_model_status(request)
+            .handle_reload_config_request(request)
             .await?;
         Ok(resp.into_inner())
     }
@@ -331,47 +372,6 @@ impl TensorflowServing {
         */
     }
 
-    /// Get model metadata
-    pub fn get_model_metadata<S, T>(
-        &self,
-        model_name: S,
-    ) -> Result<get_model_metadata::GetModelMetadataResponse>
-    where
-        T: Into<String>,
-        S: Into<ModelDescription<T>>,
-    {
-        let request = get_model_metadata::GetModelMetadataRequest {
-            model_spec: Some(self.build_model_spec(model_name)).into(),
-            metadata_field: vec!["signature_def".to_string()].into(),
-            ..Default::default()
-        };
-
-        self.prediction_client
-            .get_model_metadata(&request)
-            .context("sending request to server")
-            .map_err(From::from)
-    }
-
-    /// Get model status
-    pub fn get_model_status<S, T>(
-        &self,
-        model_name: S,
-    ) -> Result<get_model_status::GetModelStatusResponse>
-    where
-        T: Into<String>,
-        S: Into<ModelDescription<T>>,
-    {
-        let request = get_model_status::GetModelStatusRequest {
-            model_spec: Some(self.build_model_spec(model_name)).into(),
-            ..Default::default()
-        };
-
-        self.model_management_client
-            .get_model_status(&request)
-            .context("sending request to server")
-            .map_err(From::from)
-    }
-
     /// Reload the model configs
     pub fn reload_config<H>(&self, model_map: H) -> Result<model_management::ReloadConfigResponse>
     where
@@ -409,9 +409,7 @@ impl TensorflowServing {
         let ft = payload_map.to_features();
 
         // Build Vec<Example>
-        let example = Example {
-            features: Some(ft),
-        };
+        let example = Example { features: Some(ft) };
         // Build ExampleList
         let example_list = ExampleList {
             examples: vec![example],
@@ -429,9 +427,7 @@ impl TensorflowServing {
     {
         let desc = model_description.into();
 
-        let version = desc
-            .version
-            .map(VersionChoice::Version);
+        let version = desc.version.map(VersionChoice::Version);
 
         ModelSpec {
             name: desc.name.into(),
@@ -509,23 +505,17 @@ impl From<Payload> for Feature {
     fn from(c: Payload) -> Self {
         let data_list = match c {
             Payload::Bytes(v) => {
-                let data_list = BytesList {
-                    value: v,
-                };
+                let data_list = BytesList { value: v };
 
                 Kind::BytesList(data_list)
             }
             Payload::Ints(v) => {
-                let data_list = Int64List {
-                    value: v,
-                };
+                let data_list = Int64List { value: v };
 
                 Kind::Int64List(data_list)
             }
             Payload::Floats(v) => {
-                let data_list = FloatList {
-                    value: v,
-                };
+                let data_list = FloatList { value: v };
 
                 Kind::FloatList(data_list)
             }

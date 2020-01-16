@@ -1,6 +1,6 @@
-use std::path::PathBuf;
+use std::collections::HashMap;
 use structopt::StructOpt;
-use tensorflow_serving::TensorflowServing;
+use tensorflow_serving::{ModelConfig, TensorflowServing};
 
 #[derive(StructOpt, Debug)]
 struct Opts {
@@ -25,7 +25,32 @@ async fn main() {
 
     println!("Tensorflow serving client created");
 
-    println!("Sending request");
-    let status = serving.model_status(&opts.model).await.expect("fetching model status");
+    println!("Getting model status");
+    let status = serving
+        .model_status(&opts.model)
+        .await
+        .expect("fetching model status");
     println!("Got result: {:#?}", status);
+
+    println!("Fetching metadata");
+    let metadata = serving
+        .model_metadata(&opts.model)
+        .await
+        .expect("fetching model metadata");
+    println!("Got result: {:#?}", metadata);
+
+    // Build up a model config
+    let config = vec![ModelConfig {
+        base_path: "/".to_string(),
+        logging_config: None,
+        model_platform: "tensorflow".to_string(),
+        name: opts.model.clone(),
+        model_type: 0,
+        model_version_policy: None,
+        version_labels: HashMap::new(),
+    }];
+
+    println!("Reloading model");
+    let response = serving.reload(config).await.expect("reloading model");
+    println!("Got result: {:#?}", response);
 }
